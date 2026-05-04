@@ -1,0 +1,6 @@
+---
+- name: Setup Monitoring Infrastructure
+  hosts: localhost              # Si riferisce agli host definiti nell'inventory (localhost)
+  become: false           # Non serve root se usi Podman su Mac
+  roles:
+    - sou_podman          # Esegue tutta la logica contenuta nella cartella roles/sou_podman

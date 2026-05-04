@@ -1,0 +1,98 @@
+---
+# GENERAZIONE CERTIFICATO SSL
+- name: Assicura la presenza della cartella per i certificati
+  file:
+    path: "./config/haproxy/certs"
+    state: directory
+    mode: '0755'
+
+- name: Genera chiave privata per il certificato
+  openssl_privatekey:
+    path: "./config/haproxy/certs/haproxy.key"
+
+- name: Genera CSR (Certificate Signing Request)
+  openssl_csr:
+    path: "./config/haproxy/certs/haproxy.csr"
+    privatekey_path: "./config/haproxy/certs/haproxy.key"
+    common_name: "localhost"
+
+- name: Genera certificato autofirmato (valido 365 giorni)
+  openssl_certificate:
+    path: "./config/haproxy/certs/haproxy.crt"
+    privatekey_path: "./config/haproxy/certs/haproxy.key"
+    csr_path: "./config/haproxy/certs/haproxy.csr"
+    provider: selfsigned
+
+- name: Crea il file PEM combinato per HaProxy
+  shell: "cat ./config/haproxy/certs/haproxy.crt ./config/haproxy/certs/haproxy.key > ./config/haproxy/certs/haproxy.pem"
+
+- name: Rete Podman
+  containers.podman.podman_network:
+    name: sou_net
+    subnet: 192.168.10.0/24
+    state: present
+
+- name: Crea directory locali per configurazioni
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  with_items:
+    - "./config/haproxy"
+    - "./config/prometheus"
+    - "./config/grafana"
+
+- name: Applica Template Configurazioni
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+  with_items:
+    - { src: 'haproxy.cfg.j2', dest: './config/haproxy/haproxy.cfg' }
+    - { src: 'prometheus.yml.j2', dest: './config/prometheus/prometheus.yml' }
+    - { src: 'grafana.ini.j2', dest: './config/grafana/grafana.ini' }
+
+# DEFINIZIONE CONTAINER PROMETHEUS
+
+- name: Container Prometheus
+  containers.podman.podman_container:
+    name: prometheus
+    image: quay.io/prometheus/prometheus:latest
+    network: sou_net
+    ip: 192.168.10.10
+    state: started
+    recreate: yes
+    # AGGIUNGI QUESTE RIGHE SOTTO:
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.external-url=http://localhost:8080/prometheus/"
+    volumes:
+      - "./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:Z"
+      - "prometheus_data:/prometheus:Z"
+
+# DEFINIZIONE CONTAINER GRAFANA
+- name: Container Grafana
+  containers.podman.podman_container:
+    name: grafana
+    image: docker.io/grafana/grafana:latest
+    network: sou_net
+    ip: 192.168.10.20
+    state: started
+    volumes:
+      - "./config/grafana/grafana.ini:/etc/grafana/grafana.ini:Z"
+      - "grafana_data:/var/lib/grafana:Z"
+
+# DEFINIZIONE CONTAINER HAPROXY (IL REVERSE PROXY)
+- name: Container HaProxy
+  containers.podman.podman_container:
+    name: haproxy
+    image: docker.io/library/haproxy:latest
+    network: sou_net
+    ip: 192.168.10.30
+    ports:
+      - "8080:8080"
+      - "8443:8443" # <-- Nuova porta per HTTPS
+    state: started
+    volumes:
+      - "./config/haproxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro"
+      - "./config/haproxy/certs:/usr/local/etc/haproxy/certs:ro" # <-- Montaggio certs

@@ -1,4 +1,18 @@
+# Escludi i certificati: chi scarica il repo deve rigenerarli con Ansible
+# Certificati generati (verranno ricreati da Ansible)
+config/haproxy/certs/*.crt
+config/haproxy/certs/*.key
+config/haproxy/certs/*.csr
+config/haproxy/certs/*.pem
+
+# Dati dei container (se persistenti su cartella)
+# Escludi i dati dei database per non caricare GB di roba inutile
+prometheus_data/
+grafana_data/
+
+# File temporanei di sistema e editor
+# Escludi file di sistema Mac
 .DS_Store
+*.swp
 *.log
-.vagrant/
 
